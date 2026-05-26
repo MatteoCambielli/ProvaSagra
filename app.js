@@ -62,17 +62,18 @@ createApp({
             return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
         }
 
-        async function handleLogin() {
-            const hashInserito = await calcolaHash(pinInput.value);
-            if (hashInserito === HASH_PIN_VALIDO) {
-                isAuthenticated.value = true;
-                localStorage.setItem('sagra_auth', 'true');
-                loginError.value = false;
-            } else {
-                loginError.value = true;
-            }
-            pinInput.value = '';
-        }
+        // Sostituisci la vecchia funzione handleLogin con questa:
+function handleLogin() {
+    // Controllo diretto del PIN senza crittografia (comodo per i test locali)
+    if (pinInput.value === "26863") { 
+        isAuthenticated.value = true;
+        localStorage.setItem('sagra_auth', 'true');
+        loginError.value = false;
+    } else {
+        loginError.value = true;
+    }
+    pinInput.value = '';
+}
 
         function logout() {
             isAuthenticated.value = false;
