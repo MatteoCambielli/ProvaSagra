@@ -2,7 +2,8 @@ const { createApp, ref, computed, onMounted } = Vue;
 
 createApp({
     setup() {
-        // AUTENTICAZIONE E SICUREZZA
+        // AUTENTICAZIONE E SICUREZZA (PIN protetto tramite Hash SHA-256)
+        const HASH_PIN_SEGRETO = "a63b0e3df021b33946261cddc24eb066d18a28e50b1c94d3ed0d8ea9c8114f04"; 
         const isAuthenticated = ref(localStorage.getItem('sagra_auth') === 'true');
         const pinInput = ref('');
         const loginError = ref(false);
@@ -44,10 +45,17 @@ createApp({
             setTimeout(() => { toastMsg.value = ''; }, 2200);
         }
 
+        // Funzione asincrona per generare l'hash del PIN inserito
+        async function calcolaSHA256(stringa) {
+            const msgBuffer = new TextEncoder().encode(stringa);                    
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);       
+            const hashArray = Array.from(new Uint8Array(hashBuffer));              
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');  
+        }
+
         // ==========================================
-        // FUNZIONE DI UTILITÀ PER MAPPARE GLI ORDINI
+        // CARICAMENTO E SINCRONIZZAZIONE SUPABASE
         // ==========================================
-        // Questa funzione standardizza i dati di Supabase convertendo i campi snake_case in camelCase per Vue
         function mappaOrdini(databaseData) {
             return databaseData.map(o => ({
                 id: o.id,
@@ -56,17 +64,12 @@ createApp({
                 orario: o.orario,
                 totale: parseFloat(o.totale),
                 pagato: o.pagato,
-                cucinaCompletata: o.cucina_completata, // Forza la corretta corrispondenza
+                cucinaCompletata: o.cucina_completata, 
                 note: o.note,
                 piatti: o.piatti
             }));
         }
 
-        // ==========================================
-        // CARICAMENTO E SINCRONIZZAZIONE SUPABASE
-        // ==========================================
-        
-        // Carica il menu completo (Categorie + Piatti)
         async function fetchMenu() {
             try {
                 const { data: catData, error: catErr } = await supabaseClient
@@ -110,7 +113,6 @@ createApp({
             }
         }
 
-        // Carica gli ordini dal Database
         async function fetchOrdini() {
             try {
                 const { data, error } = await supabaseClient
@@ -119,8 +121,6 @@ createApp({
                     .order('id', { ascending: false });
                 
                 if (error) throw error;
-                
-                // Mappa i dati iniziali correttamente
                 ordini.value = mappaOrdini(data);
             } catch (err) {
                 console.error("Errore caricamento ordini:", err.message);
@@ -128,17 +128,12 @@ createApp({
         }
 
         // ==========================================
-        // FUNZIONE AUTO-AGGIORNAMENTO IN TEMPO REALE (REALTIME REATTIVO)
+        // AUTO-AGGIORNAMENTO IN TEMPO REALE (REALTIME)
         // ==========================================
         function attivaRealtime() {
             supabaseClient
                 .channel('sagra_realtime_globale')
-                // Cattura inserimenti, modifiche e cancellazioni sulla tabella ORDINI
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'ordini' }, async (payload) => {
-                    console.log("Cambio rilevato su Ordini, aggiorno la lista globale...");
-                    
-                    // Rieseguiamo la fetch completa per assicurarci che i filtri computed di Vue 
-                    // ricevano i record mappati alla perfezione (cucinaCompletata e pagato)
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'ordini' }, async () => {
                     await fetchOrdini();
                 })
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'categorie' }, () => { fetchMenu(); })
@@ -146,7 +141,6 @@ createApp({
                 .subscribe();
         }
 
-        // Chiamata iniziale all'avvio dell'app
         onMounted(() => {
             if (isAuthenticated.value) {
                 fetchMenu();
@@ -155,9 +149,13 @@ createApp({
             }
         });
 
-        // LOGICA DI ACCESSO PIN SECURE
-        function handleLogin() {
-            if (pinInput.value === "26863") { 
+        // GESTIONE LOGIN CON CONFRONTO HASH PROTETTO
+        async function handleLogin() {
+            // Calcoliamo l'hash del PIN digitato dall'utente
+            const hashInserito = await calcolaSHA256(pinInput.value);
+            
+            // Confrontiamo i due hash blindati
+            if (hashInserito === HASH_PIN_SEGRETO) { 
                 isAuthenticated.value = true;
                 localStorage.setItem('sagra_auth', 'true');
                 loginError.value = false;
