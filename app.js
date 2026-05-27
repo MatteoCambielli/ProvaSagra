@@ -45,6 +45,24 @@ createApp({
         }
 
         // ==========================================
+        // FUNZIONE DI UTILITÀ PER MAPPARE GLI ORDINI
+        // ==========================================
+        // Questa funzione standardizza i dati di Supabase convertendo i campi snake_case in camelCase per Vue
+        function mappaOrdini(databaseData) {
+            return databaseData.map(o => ({
+                id: o.id,
+                tavolo: o.tavolo,
+                data: o.data,
+                orario: o.orario,
+                totale: parseFloat(o.totale),
+                pagato: o.pagato,
+                cucinaCompletata: o.cucina_completata, // Forza la corretta corrispondenza
+                note: o.note,
+                piatti: o.piatti
+            }));
+        }
+
+        // ==========================================
         // CARICAMENTO E SINCRONIZZAZIONE SUPABASE
         // ==========================================
         
@@ -81,7 +99,6 @@ createApp({
                     }
                 });
 
-                // Sostituiamo l'intero oggetto per garantire che Vue si accorga del cambiamento globale
                 menu.value = menuStrutturato;
 
                 if (elencoCategorie.value.length > 0 && (!modalCategoriaAttiva.value || !menu.value[modalCategoriaAttiva.value])) {
@@ -103,44 +120,30 @@ createApp({
                 
                 if (error) throw error;
                 
-                ordini.value = data.map(o => ({
-                    id: o.id,
-                    tavolo: o.tavolo,
-                    data: o.data,
-                    orario: o.orario,
-                    totale: parseFloat(o.totale),
-                    pagato: o.pagato,
-                    cucinaCompletata: o.cucina_completata,
-                    note: o.note,
-                    piatti: o.piatti
-                }));
+                // Mappa i dati iniziali correttamente
+                ordini.value = mappaOrdini(data);
             } catch (err) {
                 console.error("Errore caricamento ordini:", err.message);
             }
         }
 
         // ==========================================
-        // FUNZIONE AUTO-AGGIORNAMENTO IN TEMPO REALE (REALTIME TOTALE)
+        // FUNZIONE AUTO-AGGIORNAMENTO IN TEMPO REALE (REALTIME REATTIVO)
         // ==========================================
         function attivaRealtime() {
-            // Canale unico globale per gestire tutti i cambiamenti del database all'istante
             supabaseClient
                 .channel('sagra_realtime_globale')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'ordini' }, (payload) => {
-                    console.log("Cambio rilevato su Ordini:", payload.eventType);
-                    fetchOrdini(); // Aggiorna Cassa, Cucina e Storico ovunque
+                // Cattura inserimenti, modifiche e cancellazioni sulla tabella ORDINI
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'ordini' }, async (payload) => {
+                    console.log("Cambio rilevato su Ordini, aggiorno la lista globale...");
+                    
+                    // Rieseguiamo la fetch completa per assicurarci che i filtri computed di Vue 
+                    // ricevano i record mappati alla perfezione (cucinaCompletata e pagato)
+                    await fetchOrdini();
                 })
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'categorie' }, (payload) => {
-                    console.log("Cambio rilevato su Categorie:", payload.eventType);
-                    fetchMenu(); // Aggiorna le categorie nella presa comande e nel listino
-                })
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'piatti' }, (payload) => {
-                    console.log("Cambio rilevato su Piatti:", payload.eventType);
-                    fetchMenu(); // Aggiorna i piatti e i prezzi nella presa comande e nel listino
-                })
-                .subscribe((status) => {
-                    console.log("Stato sottoscrizione Realtime:", status);
-                });
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'categorie' }, () => { fetchMenu(); })
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'piatti' }, () => { fetchMenu(); })
+                .subscribe();
         }
 
         // Chiamata iniziale all'avvio dell'app
