@@ -1,4 +1,3 @@
-
 const { createApp, ref, computed, onMounted } = Vue;
 
 createApp({
@@ -31,10 +30,10 @@ createApp({
         };
         const filtroDataStorico = ref(getOggi());
 
-        // STRUTTURE DATI REATTIVE (Inizialmente vuote, popolate da Supabase)
-        const elencoCategorie = ref([]); // Array lineare delle categorie
-        const menu = ref({});            // Oggetto strutturato raggruppato { 'Categoria': [piatti] }
-        const ordini = ref([]);          // Tutte le comande recuperate dal DB
+        // STRUTTURE DATI REATTIVE
+        const elencoCategorie = ref([]); 
+        const menu = ref({});            
+        const ordini = ref([]);          
 
         const nuovoPiattoListino = ref({ nome: '', prezzo: 5.00, categoria: '' });
         const nuovoOrdine = ref({ tavolo: '', note: '', carrello: [] });
@@ -49,10 +48,9 @@ createApp({
         // CARICAMENTO E SINCRONIZZAZIONE SUPABASE
         // ==========================================
         
-        // 1. Carica il menu completo (Categorie + Piatti)
+        // Carica il menu completo (Categorie + Piatti)
         async function fetchMenu() {
             try {
-                // Recupera le categorie ordinatissime
                 const { data: catData, error: catErr } = await supabaseClient
                     .from('categorie')
                     .select('nome')
@@ -61,7 +59,6 @@ createApp({
                 if (catErr) throw catErr;
                 elencoCategorie.value = catData.map(c => c.nome);
 
-                // Recupera i piatti
                 const { data: piattiData, error: piattiErr } = await supabaseClient
                     .from('piatti')
                     .select('*')
@@ -69,7 +66,6 @@ createApp({
                 
                 if (piattiErr) throw piattiErr;
 
-                // Ricostruisce l'oggetto menu strutturato per l'interfaccia grafico
                 const menuStrutturato = {};
                 elencoCategorie.value.forEach(c => {
                     menuStrutturato[c] = [];
@@ -87,7 +83,6 @@ createApp({
 
                 menu.value = menuStrutturato;
 
-                // Imposta la prima categoria disponibile come attiva se non ce n'è una
                 if (elencoCategorie.value.length > 0 && !modalCategoriaAttiva.value) {
                     modalCategoriaAttiva.value = elencoCategorie.value[0];
                     nuovoPiattoListino.value.categoria = elencoCategorie.value[0];
@@ -97,17 +92,16 @@ createApp({
             }
         }
 
-        // 2. Carica gli ordini dal Database
+        // Carica gli ordini dal Database
         async function fetchOrdini() {
             try {
                 const { data, error } = await supabaseClient
                     .from('ordini')
                     .select('*')
-                    .order('id', { ascending: false }); // I più recenti in alto
+                    .order('id', { ascending: false });
                 
                 if (error) throw error;
                 
-                // Mappa i dati convertendo i campi snake_case del database
                 ordini.value = data.map(o => ({
                     id: o.id,
                     tavolo: o.tavolo,
@@ -124,11 +118,33 @@ createApp({
             }
         }
 
+        // ==========================================
+        // FUNZIONE AUTO-AGGIORNAMENTO IN TEMPO REALE (REALTIME)
+        // ==========================================
+        function attivaRealtime() {
+            // 1. Ascolta in tempo reale qualsiasi modifica alla tabella ORDINI (creazione, cassa, cucina)
+            supabaseClient
+                .channel('cambiamenti_ordini')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'ordini' }, (payload) => {
+                    console.log("Aggiornamento ordini ricevuto in Realtime!");
+                    fetchOrdini(); // Scarica istantaneamente i dati aggiornati
+                })
+                .subscribe();
+
+            // 2. Ascolta in tempo reale modifiche al LISTINO (se modifichi i prezzi o i piatti da un telefono si aggiornano tutti)
+            supabaseClient
+                .channel('cambiamenti_listino')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'categorie' }, () => { fetchMenu(); })
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'piatti' }, () => { fetchMenu(); })
+                .subscribe();
+        }
+
         // Chiamata iniziale all'avvio dell'app
         onMounted(() => {
             if (isAuthenticated.value) {
                 fetchMenu();
                 fetchOrdini();
+                attivaRealtime(); // Avvia l'ascolto continuo
             }
         });
 
@@ -140,6 +156,7 @@ createApp({
                 loginError.value = false;
                 fetchMenu();
                 fetchOrdini();
+                attivaRealtime(); // Avvia l'ascolto continuo post-login
             } else {
                 loginError.value = true;
             }
@@ -150,6 +167,8 @@ createApp({
             isAuthenticated.value = false;
             localStorage.removeItem('sagra_auth');
             currentView.value = 'dashboard';
+            // Rimuove i canali aperti per evitare spreco di memoria
+            supabaseClient.removeAllChannels();
         }
 
         // ==========================================
@@ -162,17 +181,11 @@ createApp({
                 alert("Questa categoria esiste già!");
                 return;
             }
-
             try {
-                const { error } = await supabaseClient
-                    .from('categorie')
-                    .insert([{ nome: nome }]);
-
+                const { error } = await supabaseClient.from('categorie').insert([{ nome: nome }]);
                 if (error) throw error;
-
                 nuovaCategoriaInput.value = '';
                 showToast(`Categoria "${nome}" salvata!`);
-                await fetchMenu();
             } catch (err) {
                 alert("Errore nel salvataggio della categoria: " + err.message);
             }
@@ -181,16 +194,10 @@ createApp({
         async function rimuoviCategoria(categoria) {
             if (confirm(`Vuoi davvero eliminare la categoria "${categoria}"? Tutti i piatti al suo interno verranno rimossi permanentemente.`)) {
                 try {
-                    const { error } = await supabaseClient
-                        .from('categorie')
-                        .delete()
-                        .eq('nome', categoria);
-
+                    const { error } = await supabaseClient.from('categorie').delete().eq('nome', categoria);
                     if (error) throw error;
-
                     showToast(`Categoria rimossa.`);
                     modalCategoriaAttiva.value = '';
-                    await fetchMenu();
                 } catch (err) {
                     alert("Errore nella rimozione: " + err.message);
                 }
@@ -199,22 +206,16 @@ createApp({
 
         async function aggiungiAAListino() {
             if (!nuovoPiattoListino.value.nome || !nuovoPiattoListino.value.categoria) return;
-            
             try {
-                const { error } = await supabaseClient
-                    .from('piatti')
-                    .insert([{
-                        nome: nuovoPiattoListino.value.nome,
-                        prezzo: parseFloat(nuovoPiattoListino.value.prezzo),
-                        categoria: nuovoPiattoListino.value.categoria
-                    }]);
-
+                const { error } = await supabaseClient.from('piatti').insert([{
+                    nome: nuovoPiattoListino.value.nome,
+                    prezzo: parseFloat(nuovoPiattoListino.value.prezzo),
+                    categoria: nuovoPiattoListino.value.categoria
+                }]);
                 if (error) throw error;
-
                 nuovoPiattoListino.value.nome = '';
                 nuovoPiattoListino.value.prezzo = 5.00;
                 showToast("Piatto salvato nel listino cloud");
-                await fetchMenu();
             } catch (err) {
                 alert("Errore nell'inserimento del piatto: " + err.message);
             }
@@ -222,14 +223,9 @@ createApp({
 
         async function rimuoviDaListino(categoria, id) {
             try {
-                const { error } = await supabaseClient
-                    .from('piatti')
-                    .delete()
-                    .eq('id', id);
-
+                const { error } = await supabaseClient.from('piatti').delete().eq('id', id);
                 if (error) throw error;
                 showToast("Piatto rimosso");
-                await fetchMenu();
             } catch (err) {
                 alert("Errore nella cancellazione del piatto: " + err.message);
             }
@@ -252,24 +248,20 @@ createApp({
             const orarioStringa = String(adesso.getHours()).padStart(2, '0') + ':' + String(adesso.getMinutes()).padStart(2, '0');
             
             try {
-                const { error } = await supabaseClient
-                    .from('ordini')
-                    .insert([{
-                        tavolo: String(nuovoOrdine.value.tavolo),
-                        data: getOggi(),
-                        orario: orarioStringa,
-                        totale: totaleCarrello.value,
-                        note: nuovoOrdine.value.note || null,
-                        piatti: nuovoOrdine.value.carrello, // Salva l'array strutturato direttamente come JSONB
-                        pagato: false,
-                        cucina_completata: false
-                    }]);
+                const { error } = await supabaseClient.from('ordini').insert([{
+                    tavolo: String(nuovoOrdine.value.tavolo),
+                    data: getOggi(),
+                    orario: orarioStringa,
+                    totale: totaleCarrello.value,
+                    note: nuovoOrdine.value.note || null,
+                    piatti: nuovoOrdine.value.carrello, 
+                    pagato: false,
+                    cucina_completata: false
+                }]);
 
                 if (error) throw error;
-
-                showToast(`Ordine Tavolo ${nuovoOrdine.value.tavolo} inviato in Cucina!`);
+                showToast(`Ordine Tavolo ${nuovoOrdine.value.tavolo} inviato!`);
                 nuovoOrdine.value = { tavolo: '', note: '', carrello: [] };
-                await fetchOrdini();
             } catch (err) {
                 alert("Impossibile inviare la comanda: " + err.message);
             }
@@ -277,14 +269,9 @@ createApp({
 
         async function evadiCucina(ordine) {
             try {
-                const { error } = await supabaseClient
-                    .from('ordini')
-                    .update({ cucina_completata: true })
-                    .eq('id', ordine.id);
-
+                const { error } = await supabaseClient.from('ordini').update({ cucina_completata: true }).eq('id', ordine.id);
                 if (error) throw error;
-                showToast(`Tavolo ${ordine.tavolo} contrassegnato come PRONTO!`);
-                await fetchOrdini();
+                showToast(`Tavolo ${ordine.tavolo} pronto!`);
             } catch (err) {
                 alert("Errore modifica stato cucina: " + err.message);
             }
@@ -292,14 +279,9 @@ createApp({
 
         async function incassaConto(ordine) {
             try {
-                const { error } = await supabaseClient
-                    .from('ordini')
-                    .update({ pagato: true })
-                    .eq('id', ordine.id);
-
+                const { error } = await supabaseClient.from('ordini').update({ pagato: true }).eq('id', ordine.id);
                 if (error) throw error;
-                showToast(`Conto Tavolo ${ordine.tavolo} incassato ed archiviato.`);
-                await fetchOrdini();
+                showToast(`Conto Tavolo ${ordine.tavolo} incassato.`);
             } catch (err) {
                 alert("Errore registrazione pagamento: " + err.message);
             }
@@ -321,11 +303,7 @@ createApp({
 
         function aggiungiAlCarrello(piatto) {
             const esistente = nuovoOrdine.value.carrello.find(item => item.id === piatto.id);
-            if (esistente) {
-                esistente.qta++;
-            } else {
-                nuovoOrdine.value.carrello.push({ ...piatto, qta: 1 });
-            }
+            if (esistente) { esistente.qta++; } else { nuovoOrdine.value.carrello.push({ ...piatto, qta: 1 }); }
         }
 
         function rimuoviDalCarrello(piatto) {
@@ -351,15 +329,8 @@ createApp({
         // FILTRI E STATISTICHE REATTIVE
         // ==========================================
         const ordiniDiOggi = computed(() => ordini.value.filter(o => o.data === getOggi()));
-        
-        const incassoTotaleOggi = computed(() => {
-            return ordiniDiOggi.value.filter(o => o.pagato).reduce((sum, o) => sum + o.totale, 0);
-        });
-
-        const ordiniStoricoFiltrati = computed(() => {
-            return ordini.value.filter(o => o.data === filtroDataStorico.value);
-        });
-
+        const incassoTotaleOggi = computed(() => ordiniDiOggi.value.filter(o => o.pagato).reduce((sum, o) => sum + o.totale, 0));
+        const ordiniStoricoFiltrati = computed(() => ordini.value.filter(o => o.data === filtroDataStorico.value));
         const ordiniInCucina = computed(() => ordiniDiOggi.value.filter(o => !o.cucinaCompletata));
         const ordiniDaPagare = computed(() => ordiniDiOggi.value.filter(o => !o.pagato));
 
