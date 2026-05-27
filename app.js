@@ -8,54 +8,54 @@ createApp({
         const pinInput = ref('');
         const loginError = ref(false);
 
-        // NAVIGAZIONE E UI
+        // NAVIGAZIONE E STRUTTURE UI
         const currentView = ref('dashboard');
         const toastMsg = ref('');
         const isMenuModalOpen = ref(false);
-        const modalCategoriaAttiva = ref('Primi Piatti');
+        const modalCategoriaAttiva = ref('');
+        const nuovaCategoriaInput = ref('');
 
         const viewTitles = {
-            'dashboard': 'Pannello di Controllo',
-            'nuovo-ordine': 'Prendi Ordinazione',
-            'cucina': 'Monitor Comande',
-            'cassa': 'Punto Cassa',
-            'storico': 'Archivio Storico',
-            'menu-manager': 'Gestione Listino'
+            'dashboard': 'Pannello Principale',
+            'nuovo-ordine': 'Crea Nuova Ordinazione',
+            'cucina': 'Monitor Comande Cucina',
+            'cassa': 'Registrazione Cassa e Scontrini',
+            'storico': 'Archivio Storico Comande',
+            'menu-manager': 'Configurazione Categorie e Piatti'
         };
 
-        // GESTIONE DATA ODIERNA (Formato YYYY-MM-DD per default)
+        // GESTIONE DATA ODIERNA
         const getOggi = () => {
             const d = new Date();
-            // Evita problemi di fuso orario prendendo le componenti locali
             return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         };
         const filtroDataStorico = ref(getOggi());
 
-        // LISTINO MENU
+        // LISTINO MENU CON STRUTTURA AD OGGETTI CHIAVE-VALORE REATTIVA
         const menu = ref({
             'Primi Piatti': [
                 { id: 1, nome: 'Pasta al Ragù', prezzo: 10.00 },
-                { id: 2, nome: 'Gnocchi al Cinghiale', prezzo: 12.00 },
-                { id: 3, nome: 'Polenta e Funghi', prezzo: 9.00 }
+                { id: 2, nome: 'Gnocchi al Cinghiale', prezzo: 12.00 }
             ],
             'Secondi Piatti': [
                 { id: 4, nome: 'Grigliata Mista', prezzo: 15.00 },
-                { id: 5, nome: 'Patatine Fritte', prezzo: 6.00 },
-                { id: 6, nome: 'Salsiccia alla Piastra', prezzo: 8.00 }
+                { id: 5, nome: 'Patatine Fritte', prezzo: 6.00 }
             ],
             'Bevande': [
                 { id: 7, nome: 'Acqua Naturale 1L', prezzo: 2.00 },
-                { id: 8, nome: 'Birra Artigianale', prezzo: 5.50 },
-                { id: 9, nome: 'Vino Rosso 1/2L', prezzo: 5.00 }
+                { id: 8, nome: 'Birra Artigianale', prezzo: 5.50 }
             ]
         });
 
-        const nuovoPiattoListino = ref({ nome: '', prezzo: 5.00, categoria: 'Primi Piatti' });
+        // Impostiamo la prima categoria disponibile come attiva di default per l'interfaccia
+        if (Object.keys(menu.value).length > 0) {
+            modalCategoriaAttiva.value = Object.keys(menu.value)[0];
+        }
+
+        const nuovoPiattoListino = ref({ nome: '', prezzo: 5.00, categoria: Object.keys(menu.value)[0] || '' });
 
         // STRUTTURA COMANDE
         const nuovoOrdine = ref({ tavolo: '', note: '', carrello: [] });
-        
-        // Ordine di esempio pre-caricato
         const ordini = ref([
             {
                 id: 1,
@@ -73,7 +73,7 @@ createApp({
             }
         ]);
 
-        // LOGIN
+        // LOGICA DI ACCESSO
         function handleLogin() {
             if (pinInput.value === "26863") { 
                 isAuthenticated.value = true;
@@ -91,7 +91,58 @@ createApp({
             currentView.value = 'dashboard';
         }
 
-        // FUNZIONI CARRELLO
+        // AGGIUNGI / RIMUOVI CATEGORIE DINAMICHE
+        function aggiungiCategoria() {
+            const nome = nuovaCategoriaInput.value.trim();
+            if (!nome) return;
+            if (menu.value[nome]) {
+                alert("Questa categoria esiste già!");
+                return;
+            }
+            
+            // Crea una chiave vuota nell'oggetto listino
+            menu.value[nome] = [];
+            
+            // Aggiorna i selettori se erano vuoti
+            if (!modalCategoriaAttiva.value) modalCategoriaAttiva.value = nome;
+            if (!nuovoPiattoListino.value.categoria) nuovoPiattoListino.value.categoria = nome;
+            
+            nuovaCategoriaInput.value = '';
+            showToast(`Categoria "${nome}" creata!`);
+        }
+
+        function rimuoviCategoria(categoria) {
+            if (confirm(`Vuoi davvero eliminare la categoria "${categoria}"? Tutti i piatti al suo interno verranno cancellati.`)) {
+                delete menu.value[categoria];
+                
+                // Ricalcola i puntatori attivi per non rompere l'interfaccia grafica
+                const chiaviRimaste = Object.keys(menu.value);
+                if (chiaviRimaste.length > 0) {
+                    modalCategoriaAttiva.value = chiaviRimaste[0];
+                    nuovoPiattoListino.value.categoria = chiaviRimaste[0];
+                } else {
+                    modalCategoriaAttiva.value = '';
+                    nuovoPiattoListino.value.categoria = '';
+                }
+                showToast(`Categoria rimossa.`);
+            }
+        }
+
+        // CONTROLLO APERTURA MODAL ORDINE
+        function apriModalMenu() {
+            const chiavi = Object.keys(menu.value);
+            if (chiavi.length === 0) {
+                alert("Crea prima almeno una categoria nella scheda 'Configura Listino'!");
+                return;
+            }
+            // Assicuriamoci che ci sia sempre una categoria selezionata aperta all'avvio
+            if (!modalCategoriaAttiva.value || !menu.value[modalCategoriaAttiva.value]) {
+                modalCategoriaAttiva.value = chiavi[0];
+            }
+            isMenuModalOpen.value = true;
+        }
+
+        // GESTIONE ELEMENTI COMANDA
         function aggiungiAlCarrello(piatto) {
             const esistente = nuovoOrdine.value.carrello.find(item => item.id === piatto.id);
             if (esistente) {
@@ -111,7 +162,6 @@ createApp({
             }
         }
 
-        // Funzione helper per l'interfaccia (mostra badge qt nel modal)
         const quantitaNelCarrello = (piattoId) => {
             const trovato = nuovoOrdine.value.carrello.find(item => item.id === piattoId);
             return trovato ? trovato.qta : 0;
@@ -123,17 +173,16 @@ createApp({
 
         function showToast(msg) {
             toastMsg.value = msg;
-            setTimeout(() => { toastMsg.value = ''; }, 2500);
+            setTimeout(() => { toastMsg.value = ''; }, 2200);
         }
 
-        // INVIA ORDINE (RIMANE NELLA STESSA PAGINA)
         function inviaOrdine() {
             if (!nuovoOrdine.value.tavolo) {
-                alert("Assegna un numero di tavolo alla comanda!");
+                alert("Riempi il numero di tavolo!");
                 return;
             }
             if (nuovoOrdine.value.carrello.length === 0) {
-                alert("Il carrello è vuoto!");
+                alert("Il carrello è vuoto! Apri il menu per aggiungere piatti.");
                 return;
             }
 
@@ -143,7 +192,7 @@ createApp({
             const nuovo = {
                 id: ordini.value.length > 0 ? Math.max(...ordini.value.map(o => o.id)) + 1 : 1,
                 tavolo: nuovoOrdine.value.tavolo,
-                data: getOggi(), // Assegna la data odierna all'ordine
+                data: getOggi(),
                 note: nuovoOrdine.value.note,
                 orario: orarioStringa,
                 totale: totaleCarrello.value,
@@ -153,15 +202,11 @@ createApp({
             };
 
             ordini.value.unshift(nuovo);
-            
-            // Svuota il form ma NON cambia currentView
             nuovoOrdine.value = { tavolo: '', note: '', carrello: [] };
-            
-            // Mostra avviso visivo di successo
-            showToast(`Ordine Tavolo ${nuovo.tavolo} Inviato!`);
+            showToast(`Ordine Tavolo ${nuovo.tavolo} inviato alla cucina!`);
         }
 
-        // FILTRI E STATISTICHE DASHBOARD/STORICO
+        // COMPUTED DI CALCOLO FILTRATE
         const ordiniDiOggi = computed(() => ordini.value.filter(o => o.data === getOggi()));
         
         const incassoTotaleOggi = computed(() => {
@@ -172,22 +217,24 @@ createApp({
             return ordini.value.filter(o => o.data === filtroDataStorico.value);
         });
 
-        // FLUSSO LAVORATIVO CUCINA & CASSA (Filtrati sempre per oggi)
         const ordiniInCucina = computed(() => ordiniDiOggi.value.filter(o => !o.cucinaCompletata));
         const ordiniDaPagare = computed(() => ordiniDiOggi.value.filter(o => !o.pagato));
 
         function evadiCucina(ordine) {
             ordine.cucinaCompletata = true;
+            showToast(`Tavolo ${ordine.tavolo} pronto!`);
         }
 
         function incassaConto(ordine) {
             ordine.pagato = true;
+            showToast(`Conto Tavolo ${ordine.tavolo} incassato.`);
         }
 
-        // MANAGEMENT LISTINO MENU
+        // GESTIONE INTERNA PIATTI LISTINO
         function aggiungiAAListino() {
-            if (!nuovoPiattoListino.value.nome) return;
+            if (!nuovoPiattoListino.value.nome || !nuovoPiattoListino.value.categoria) return;
             const targetCat = nuovoPiattoListino.value.categoria;
+            
             const tuttiId = Object.values(menu.value).flatMap(cat => cat.map(p => p.id));
             const nuovoId = tuttiId.length > 0 ? Math.max(...tuttiId) + 1 : 1;
 
@@ -198,6 +245,7 @@ createApp({
             });
             nuovoPiattoListino.value.nome = '';
             nuovoPiattoListino.value.prezzo = 5.00;
+            showToast("Piatto salvato");
         }
 
         function rimuoviDaListino(categoria, id) {
@@ -210,8 +258,9 @@ createApp({
             aggiungiAlCarrello, rimuoviDalCarrello, totaleCarrello, inviaOrdine,
             ordiniInCucina, ordiniDaPagare, evadiCucina, incassaConto, incassoTotaleOggi, ordiniDiOggi,
             nuovoPiattoListino, aggiungiAAListino, rimuoviDaListino,
-            isMenuModalOpen, modalCategoriaAttiva, quantitaNelCarrello,
-            filtroDataStorico, ordiniStoricoFiltrati, toastMsg
+            isMenuModalOpen, modalCategoriaAttiva, quantitaNelCarrello, apriModalMenu,
+            filtroDataStorico, ordiniStoricoFiltrati, toastMsg,
+            nuovaCategoriaInput, aggiungiCategoria, rimuoviCategoria
         };
     }
 }).mount('#app');
