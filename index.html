@@ -107,7 +107,6 @@
                 </div>
 
                 <div v-if="currentView === 'nuovo-ordine'" class="space-y-4 max-w-xl mx-auto">
-                    
                     <div class="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex gap-3">
                         <div class="w-1/3">
                             <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Tavolo</label>
@@ -230,7 +229,7 @@
                             <div class="space-y-1 mb-3">
                                 <p v-for="p in ordine.piatti" class="text-xs text-slate-600 flex justify-between">
                                     <span>{{ p.qta }}x {{ p.nome }}</span>
-                                    <span class="font-semibold text-slate-400">€{{ (p.prezzo * p.qta).toFixed(2) }}</span>
+                                    <span class="font-semibold text-slate-400">€ {{ (p.prezzo * p.qta).toFixed(2) }}</span>
                                 </p>
                             </div>
                             <div class="flex justify-between items-center pt-2 border-t border-dashed">
@@ -323,7 +322,7 @@
                             </div>
                             <div class="flex-1">
                                 <select v-model="nuovoPiattoListino.categoria" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none bg-white">
-                                    <option v-for="(p, cat) in menu" :value="cat">{{ cat }}</option>
+                                    <option v-for="cat in elencoCategorie" :value="cat">{{ cat }}</option>
                                 </select>
                             </div>
                         </div>
