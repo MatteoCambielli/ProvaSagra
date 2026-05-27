@@ -3,7 +3,7 @@ const { createApp, ref, computed, onMounted } = Vue;
 createApp({
     setup() {
         // AUTENTICAZIONE E SICUREZZA (PIN protetto tramite Hash SHA-256)
-        const HASH_PIN_SEGRETO = "a63b0e3df021b33946261cddc24eb066d18a28e50b1c94d3ed0d8ea9c8114f04"; 
+        const HASH_PIN_SEGRETO = "499c7553b3b4f6b0bfbb864c8d5c49dc75dfa3b4e64f0288eb92043e06cfb99b";
         const isAuthenticated = ref(localStorage.getItem('sagra_auth') === 'true');
         const pinInput = ref('');
         const loginError = ref(false);
