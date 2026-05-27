@@ -81,9 +81,10 @@ createApp({
                     }
                 });
 
+                // Sostituiamo l'intero oggetto per garantire che Vue si accorga del cambiamento globale
                 menu.value = menuStrutturato;
 
-                if (elencoCategorie.value.length > 0 && !modalCategoriaAttiva.value) {
+                if (elencoCategorie.value.length > 0 && (!modalCategoriaAttiva.value || !menu.value[modalCategoriaAttiva.value])) {
                     modalCategoriaAttiva.value = elencoCategorie.value[0];
                     nuovoPiattoListino.value.categoria = elencoCategorie.value[0];
                 }
@@ -119,24 +120,27 @@ createApp({
         }
 
         // ==========================================
-        // FUNZIONE AUTO-AGGIORNAMENTO IN TEMPO REALE (REALTIME)
+        // FUNZIONE AUTO-AGGIORNAMENTO IN TEMPO REALE (REALTIME TOTALE)
         // ==========================================
         function attivaRealtime() {
-            // 1. Ascolta in tempo reale qualsiasi modifica alla tabella ORDINI (creazione, cassa, cucina)
+            // Canale unico globale per gestire tutti i cambiamenti del database all'istante
             supabaseClient
-                .channel('cambiamenti_ordini')
+                .channel('sagra_realtime_globale')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'ordini' }, (payload) => {
-                    console.log("Aggiornamento ordini ricevuto in Realtime!");
-                    fetchOrdini(); // Scarica istantaneamente i dati aggiornati
+                    console.log("Cambio rilevato su Ordini:", payload.eventType);
+                    fetchOrdini(); // Aggiorna Cassa, Cucina e Storico ovunque
                 })
-                .subscribe();
-
-            // 2. Ascolta in tempo reale modifiche al LISTINO (se modifichi i prezzi o i piatti da un telefono si aggiornano tutti)
-            supabaseClient
-                .channel('cambiamenti_listino')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'categorie' }, () => { fetchMenu(); })
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'piatti' }, () => { fetchMenu(); })
-                .subscribe();
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'categorie' }, (payload) => {
+                    console.log("Cambio rilevato su Categorie:", payload.eventType);
+                    fetchMenu(); // Aggiorna le categorie nella presa comande e nel listino
+                })
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'piatti' }, (payload) => {
+                    console.log("Cambio rilevato su Piatti:", payload.eventType);
+                    fetchMenu(); // Aggiorna i piatti e i prezzi nella presa comande e nel listino
+                })
+                .subscribe((status) => {
+                    console.log("Stato sottoscrizione Realtime:", status);
+                });
         }
 
         // Chiamata iniziale all'avvio dell'app
@@ -144,7 +148,7 @@ createApp({
             if (isAuthenticated.value) {
                 fetchMenu();
                 fetchOrdini();
-                attivaRealtime(); // Avvia l'ascolto continuo
+                attivaRealtime(); 
             }
         });
 
@@ -156,7 +160,7 @@ createApp({
                 loginError.value = false;
                 fetchMenu();
                 fetchOrdini();
-                attivaRealtime(); // Avvia l'ascolto continuo post-login
+                attivaRealtime(); 
             } else {
                 loginError.value = true;
             }
@@ -167,7 +171,6 @@ createApp({
             isAuthenticated.value = false;
             localStorage.removeItem('sagra_auth');
             currentView.value = 'dashboard';
-            // Rimuove i canali aperti per evitare spreco di memoria
             supabaseClient.removeAllChannels();
         }
 
@@ -197,7 +200,6 @@ createApp({
                     const { error } = await supabaseClient.from('categorie').delete().eq('nome', categoria);
                     if (error) throw error;
                     showToast(`Categoria rimossa.`);
-                    modalCategoriaAttiva.value = '';
                 } catch (err) {
                     alert("Errore nella rimozione: " + err.message);
                 }
