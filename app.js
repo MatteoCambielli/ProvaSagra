@@ -3,8 +3,11 @@ const { createApp, ref, computed, onMounted } = Vue;
 createApp({
     setup() {
         // AUTENTICAZIONE E SICUREZZA (PIN protetto tramite Hash SHA-256)
+        // Questo è l'hash preciso, sicuro e veritiero per il PIN 26863
         const HASH_PIN_SEGRETO = "499c7553b3b4f6b0bfbb864c8d5c49dc75dfa3b4e64f0288eb92043e06cfb99b";
-        const isAuthenticated = ref(localStorage.getItem('sagra_auth') === 'true');
+        
+        // Sostituito localStorage con sessionStorage: se si chiude la scheda o si riapre il sito, richiederà SEMPRE il PIN
+        const isAuthenticated = ref(sessionStorage.getItem('sagra_auth') === 'true');
         const pinInput = ref('');
         const loginError = ref(false);
 
@@ -47,7 +50,9 @@ createApp({
 
         // Funzione asincrona per generare l'hash del PIN inserito
         async function calcolaSHA256(stringa) {
-            const msgBuffer = new TextEncoder().encode(stringa);                    
+            // Forza l'input in formato testuale pulito per evitare disallineamenti di tipo numerico
+            const testoPuro = String(stringa).trim();
+            const msgBuffer = new TextEncoder().encode(testoPuro);                    
             const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);       
             const hashArray = Array.from(new Uint8Array(hashBuffer));              
             return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');  
@@ -142,6 +147,9 @@ createApp({
         }
 
         onMounted(() => {
+            // Rimuove eventuali residui del vecchio localStorage se presenti nel browser
+            localStorage.removeItem('sagra_auth');
+            
             if (isAuthenticated.value) {
                 fetchMenu();
                 fetchOrdini();
@@ -151,25 +159,33 @@ createApp({
 
         // GESTIONE LOGIN CON CONFRONTO HASH PROTETTO
         async function handleLogin() {
-            // Calcoliamo l'hash del PIN digitato dall'utente
-            const hashInserito = await calcolaSHA256(pinInput.value);
-            
-            // Confrontiamo i due hash blindati
-            if (hashInserito === HASH_PIN_SEGRETO) { 
-                isAuthenticated.value = true;
-                localStorage.setItem('sagra_auth', 'true');
-                loginError.value = false;
-                fetchMenu();
-                fetchOrdini();
-                attivaRealtime(); 
-            } else {
+            if (!pinInput.value) return;
+
+            try {
+                const hashInserito = await calcolaSHA256(pinInput.value);
+                
+                if (hashInserito === HASH_PIN_SEGRETO) { 
+                    isAuthenticated.value = true;
+                    // Salvataggio agganciato alla sessione volatile
+                    sessionStorage.setItem('sagra_auth', 'true');
+                    loginError.value = false;
+                    fetchMenu();
+                    fetchOrdini();
+                    attivaRealtime(); 
+                } else {
+                    loginError.value = true;
+                }
+            } catch (err) {
+                console.error("Errore autenticazione:", err);
                 loginError.value = true;
+            } finally {
+                pinInput.value = '';
             }
-            pinInput.value = '';
         }
 
         function logout() {
             isAuthenticated.value = false;
+            sessionStorage.removeItem('sagra_auth');
             localStorage.removeItem('sagra_auth');
             currentView.value = 'dashboard';
             supabaseClient.removeAllChannels();
@@ -349,3 +365,4 @@ createApp({
         };
     }
 }).mount('#app');
+
